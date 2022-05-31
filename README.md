@@ -15,9 +15,9 @@ The first column contains the name of the page, the language of the page, type o
 Analysis and forecasting web traffic has many applications in various areas. It is a proactive approach to provide secure, reliable and qualitative web communication.
 Web traffic can be defined as the amount of data sent and received by visitors to a website. In recent years, emphasis on how to predict traffic of web pages has 
 increased significantly. Predicting web traffic can help web site owners in many ways including: 
-(a) determining an effective strategy for load balancing of web pages residing in the cloud
-(b) forecasting future trends based on historical data
-(c) understanding the user behaviour. 
+- (a) determining an effective strategy for load balancing of web pages residing in the cloud
+- (b) forecasting future trends based on historical data
+- (c) understanding the user behaviour. 
 Wikipedia is a multilingual free content online encyclopaedia written and maintained by a community of volunteers through a model of open collaboration, using a 
 wiki-based editing system. Wikipedia grants open access to all traffic data and provides lots of additional (semantic) information in a context network besides 
 single keywords. Wikipedia is often used for deep topical reading.
