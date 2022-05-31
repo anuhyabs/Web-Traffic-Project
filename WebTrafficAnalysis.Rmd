@@ -1,0 +1,877 @@
+---
+title: "WEB TRAFFIC ANALYSIS"
+subtitle: "DATA 598: PROJECT REPORT"
+author: "Anuhya B S"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# INTRODUCTION
+
+## CONTEXT AND BACKGROUND:
+
+Analysis and forecasting web traffic has many applications in various areas. It is a proactive approach to provide secure, reliable and qualitative web communication. Web traffic is most generally defined as as the amount of data sent and received by visitors to a website, which is representative of the total number of people visiting the site as well. In recent years, emphasis on how to predict traffic of web pages has increased significantly. Predicting web traffic can help web site owners in many ways including: 
+1. determining an effective strategy for load balancing of web pages residing in the cloud
+2. forecasting future trends based on historical data
+3. understanding the user behavior. 
+
+For this project, web traffic from Wikipedia has been used. Wikipedia is a popular multilingual free content online encyclopedia written and maintained by a community of volunteers through a model of open collaboration. It grants open access to all traffic data and provides lots of additional information in a context network besides single keywords. Wikipedia is often used for deep topical reading. Thus, it is a great platform to forecast th trends of Wiki pages based on historical data.
+
+## GOALS:
+1. Grouping the data based on the language of the page and seeing if there exist any interesting patterns in web traffic based on language patterns. (ex: English, French, Chinese)
+2. Forecasting future traffic for each language of the web pages as a group.
+
+I am interested in this project as it helps me understand the underlying principles of time series forecasting by applying them on a real world web traffic model. I believe that by understanding this I can also use such models in various other applications such as vehicle traffic forecasting, network packet forecasting etc.
+
+## DATA DESCRIPTION
+
+The data set consists of approximately 145k time series. Each of these time series represent a number of daily views of different Wikipedia articles, starting from July, 1st, 2015 up until December 31st, 2016. The data set has 804 columns – except the first column, each column represents a date and the daily traffic for that particular Wikipedia page. The first column contains the name of the page, the language of the page, type of access and agent.
+
+# EXPLORATORY ANALYSIS
+
+### Loading Libraries and Data
+
+```{r}
+library(astsa)
+library(forecast)
+library(tseries)
+library(stringi)
+```
+
+
+```{r}
+wtd <- read.csv('train_2.csv',check.names = FALSE)
+dim(wtd)
+```
+The dimensions of the data set are 145063 rows and 804 columns. 
+
+### Handling missing values
+
+```{r}
+na_counts <- colSums(is.na(wtd))
+head(na_counts)
+```
+The data set has several missing values. I believe there are two main reasons for the missing values - first is because the Wikipedia pages were not created for the topics and second because there is actual missing data. For now, I have substituted the NA values with 0 for both the cases. 
+
+```{r}
+wtd[is.na(wtd)] <- 0
+```
+
+### Grouping the data by languages
+
+Since the data is humongous, it makes sense to group the data by languages and see if there is an influence of language on the pages. 
+The getLang function is designed to extract the language of each page from the 'Page' column in the data set.
+
+```{r}
+getLang <- function(page){
+  res <- stri_extract(str = page, regex = '[a-z][a-z].wikipedia.org')
+  if(!is.na(res))
+    return(substr(res,0,2))
+  return('na')
+}
+```
+
+There are 7 distinct languages in the data set. The two letter words correspond to the following languages:
+
+- de - German
+- en - English
+- es - Spanish
+- fr - French
+- ja - Japanese
+- ru - Russian
+- zh - Chinese
+
+Next I have written a function : grpByLang that groups the data set based on the language of the page and stores the data into seperate lists. To group the pages by language, I have taken the average of all the views for all pages of each language. Each language list os then transposed so that the dates act as rows and number of visits becomee the column. Finally, it is converted into a time series object with a frequency of 7 as it is a daily data set.
+The plot shows the counts of each of the languages in the data set.
+
+```{r}
+library(ggplot2)
+wtd$lang <- sapply(wtd$Page,FUN = getLang)
+table(wtd$lang)
+ggplot(data=wtd, aes(x=lang)) +
+  geom_bar()
+```
+
+```{r}
+langCodes <- unique(wtd$lang)
+wtd_lang <- data.frame()
+
+grpByLang <- function(l, wtd_ln){
+  temp <- subset(wtd_ln, lang == l)
+  temp <- subset(temp, select = -c(lang))
+  wtd_ln_sums <-  colSums(temp[,-1]) / nrow(temp)
+  wtd_ln_sums$lang <- l
+  return(wtd_ln_sums)
+}
+res <- list()
+for (i in 1:length(langCodes)){
+  res[[i]] <- grpByLang(langCodes[i], wtd)
+}
+library(lubridate)
+
+wtd_zh <- as.data.frame(res[[1]], check.names = FALSE)
+wtd_zh <- as.data.frame(t(wtd_zh[,-804]), check.names = FALSE)
+wtd_zh$date <- as.Date(rownames(wtd_zh))
+wtd_zh_ts <- ts(wtd_zh$V1, frequency = 7)
+
+wtd_fr <- as.data.frame(res[[2]], check.names = FALSE)
+wtd_fr <- as.data.frame(t(wtd_fr[,-804]))
+wtd_fr$date <- as.Date(rownames(wtd_fr))
+wtd_fr_ts <- ts(wtd_fr$V1, frequency = 7)
+
+wtd_en <- as.data.frame(res[[3]], check.names = FALSE)
+wtd_en <- as.data.frame(t(wtd_en[,-804]))
+wtd_en$date <- as.Date(rownames(wtd_en))
+wtd_en_ts <- ts(wtd_en$V1, frequency = 7)
+
+wtd_na <- as.data.frame(res[[4]], check.names = FALSE)
+wtd_na <- as.data.frame(t(wtd_na[,-804]))
+wtd_na$date <- as.Date(rownames(wtd_na))
+wtd_na_ts <- ts(wtd_na$V1, frequency = 7)
+
+wtd_ru <- as.data.frame(res[[5]], check.names = FALSE)
+wtd_ru <- as.data.frame(t(wtd_ru[,-804]))
+wtd_ru$date <- as.Date(rownames(wtd_ru))
+wtd_ru_ts <- ts(wtd_ru$V1, frequency = 7)
+
+wtd_de <- as.data.frame(res[[6]], check.names = FALSE)
+wtd_de <- as.data.frame(t(wtd_de[,-804]))
+wtd_de$date <- as.Date(rownames(wtd_de))
+wtd_de_ts <- ts(wtd_de$V1, frequency = 7)
+
+wtd_ja <- as.data.frame(res[[7]], check.names = FALSE)
+wtd_ja <- as.data.frame(t(wtd_ja[,-804]))
+wtd_ja$date <- as.Date(rownames(wtd_ja))
+wtd_ja_ts <- ts(wtd_ja$V1, frequency = 7)
+
+wtd_es <- as.data.frame(res[[8]], check.names = FALSE)
+wtd_es <- as.data.frame(t(wtd_es[,-804]))
+wtd_es$date <- as.Date(rownames(wtd_es))
+wtd_es_ts <- ts(wtd_es$V1, frequency = 7)
+
+#write.csv(wtd_zh, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-zh.csv")
+#write.csv(wtd_en, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-en.csv")
+##write.csv(wtd_fr, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-fr.csv")
+#write.csv(wtd_ru, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-ru.csv")
+#write.csv(wtd_es, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-es.csv")
+#write.csv(wtd_de, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-de.csv")
+#write.csv(wtd_ja, file = "D:/Seattle/UW/MSDS/Data598-TimeSeries/wtd-ja.csv")
+```
+
+
+### Plotting the series
+
+I have plotted the the web traffic of each language in a different colours. This helps us understand the language that in general have the highest number of visitors as well as identify any patterns in the data which may common across languages.
+
+```{r}
+par(mar=c(5, 4, 4, 8), xpd=TRUE)
+plot(0,0,xlim = c(0,116), ylim = c(0,8500), type = "n", main = "Web Traffic Analysis", xlab= "Day", ylab = "Web Traffic")
+cl <- rainbow(8)
+lines(wtd_zh_ts, col = cl[1], type = 'l')
+lines(wtd_fr_ts,col = cl[2], type = 'l')
+lines(wtd_en_ts,col = cl[3], type = 'l')
+lines(wtd_na_ts,col = cl[4], type = 'l')
+lines(wtd_ru_ts,col = cl[5], type = 'l')
+lines(wtd_de_ts,col = cl[6], type = 'l')
+lines(wtd_ja_ts,col = cl[7], type = 'l')
+lines(wtd_es_ts,col = cl[8], type = 'l')
+legend("topright",inset=c(-0.25, 0.3), legend = langCodes,fill = cl, title="Language")
+```
+We can see form the plot, that the English Wikipedia pages have the the most traffic. There is also a significant spike in traffic around the middle of the data set for both the  English and the Russian pages which distinctly stands out in the plot.
+
+
+# Analyzing, Forecasting and Modeling each language time series
+
+For each language, I have taken the following steps:
+1. Splitting the language data into training and test set
+2. Plotting the training data and eyeballing to see if the time series looks stationary
+3. Performing the KPSS test to check for stationarity
+4. Apply STL decomposition to the time series to understand the trend component, seasonal component and the remainder component.
+5. All the language time  series have some amount of seasonality so I have applied Spectral Analysis to discover any underlying peaks/ periodicities that are immediately visible from the ACF Plots.
+6. Plotted the Autocorrelation plots
+7. Applied seasonal/ non-seasonal differencing based on the time series data.
+8. Identified and fit potential ARIMA models for the time series data and evaluated the residual plots for each model.
+9. Forecasting the time series using the most appropriate model identified in Step 8.
+10. Evaluating the accuracy of the forecast.
+
+I have briefly described the results of each step and my decision process behind selecting a particular model. 
+
+Please note that I have only considered the seven languages (de, en, es, fr, ja, ru, zh) for this project and not the 'na' time series as it is not language related and mainly deals with media links.
+
+## Chinese Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_zh_train <- window(wtd_zh_ts, end = c(100,1))
+wtd_zh_test <- window(wtd_zh_ts, start = c(100,2))
+plot(wtd_zh_train, main = "Chinese Web Traffic Analysis")
+```
+There is a noticeable upward trend in the first few months, followed by a large spike in the traffic,. There also appears to be a seasonality in the data. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_zh_stl <- stl(wtd_zh_train, s.window = "periodic")
+plot(wtd_zh_stl)
+```
+
+Performing the KPSS test to verify the stationarity:
+
+```{r}
+kpss.test(wtd_zh_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_zh.spec <- mvspec(as.vector(wtd_zh_train),detrend = TRUE, spans = 3)
+head(wtd_zh.spec$details)
+```
+The plot shows one major peak around the 140th day (approx.) and a small peak arounf the 280th . Representative of quarterly seasonality? 
+
+Plotting the Autocorrelation plot:
+```{r}
+acf2(wtd_zh_train, main = "Web Traffic Analysis: Chinese")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Performing Seasonal Differencing:
+
+```{r}
+wtd_zh_ts.d1 <- diff(wtd_zh_train, 1)
+plot(wtd_zh_ts.d1,
+     main = "Web Traffic Analysis: Chinese",
+     ylab = "Chinese Pages", type = 'l')
+kpss.test(wtd_zh_ts.d1)
+acf2(wtd_zh_ts.d1)
+```
+
+```{r}
+wtd_zh_ts.d2 <- diff(wtd_zh_ts.d1, lag = 7)
+plot(wtd_zh_ts.d2,
+     main = "Web Traffic Analysis: Chinese",
+     ylab = "Chinese Pages", type = 'l')
+kpss.test(wtd_zh_ts.d2)
+acf2(wtd_zh_ts.d2)
+```
+From the plot above, intuitively I would pick the following values:
+Q = 3
+P = 0
+D = 1
+q = 3
+p = 1/5
+d = 0
+I would apply SARIMA(1,0,3)(0,1,3)[7], SARIMA(5,0,3)(0,1,3)[7] and run auto ARIMA.
+
+ARIMA Modeling:
+
+```{r}
+wtd_zh_sm1 <- sarima(wtd_zh_train, S = 7, diff = 1,
+                     p = 4, d = 1, q = 2,
+                     P = 0, D = 1, Q = 2)
+wtd_zh_sm1
+```
+```{r}
+wtd_zh_sm2 <- sarima(wtd_zh_train, S = 7,
+                     p = 5, d = 0, q = 3,
+                     P = 0, D = 1, Q = 3)
+wtd_zh_sm2
+```
+ 
+```{r}
+auto.arima(wtd_zh_train, seasonal = TRUE)
+```
+
+```{r}
+wtd_zh_sm3 <- sarima(wtd_zh_train, S = 7,
+                     p = 5, d = 1, q = 1,
+                     P = 2, D = 0, Q = 0)
+wtd_zh_sm3
+```
+Looking at the above plots, ARIMA(5,0,3)(0,1,3)[7] has the lowest AIC value. However, there is hardly much difference between the AIC value of the other models. I have decided to go ahead with ARIMA(1,0,3)(0,1,3)[7] model for forecasting because among all the models it had the best ACF of Residuals and p-values for Ljung-Box statistic and AIC value is also pretty less.
+
+Forecasting:
+
+```{r}
+wtd_zh_sm1_for <- sarima.for(wtd_zh_train,n.ahead = 109,S = 7,
+                     p = 4, d = 1, q = 2,
+                     P = 0, D = 1, Q = 2)
+lines(wtd_zh_test, type = 'o')
+```
+Estimating the accuracy:
+
+```{r}
+accuracy(wtd_zh_sm1_for$pred, wtd_zh_test)
+```
+The RMSE value is 23.00949. 
+
+## French Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_fr_train <- window(wtd_fr_ts, end = c(100,1))
+wtd_fr_test <- window(wtd_fr_ts, start = c(100,2))
+plot(wtd_fr_train, main = "French Web Traffic Analysis")
+```
+Similar to the previous time series, there is a noticeable upward trend in the first few months, followed by a large spike in the traffic. There also seasonality in the data. The time series does not seem to be stationary. 
+
+
+STL Decomposition:
+```{r}
+wtd_fr_stl <- stl(wtd_fr_train, s.window = "periodic")
+plot(wtd_fr_stl)
+```
+Performing the KPSS Test for stationarity:
+
+```{r}
+kpss.test(wtd_fr_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_fr.spec <- mvspec(as.vector(wtd_fr_train),detrend = TRUE, spans = 2)
+head(wtd_fr.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysis. However, there seem to be two other smaller spikes around the 140th and the 280th day (approx.) but not any other significant peaks. This may signify some kind of quarterly seasonality.
+
+Plotting the Autocorrelation plot:
+
+```{r}
+acf2(wtd_fr_train, main = "Web Traffic Analysis: French")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Seasonal Differencing:
+```{r}
+wtd_fr_ts.d1 <- diff(wtd_fr_train, 1)
+plot(wtd_fr_ts.d1,
+     main = "Web Traffic Analysis: French",
+     ylab = "French Pages", type = 'l')
+kpss.test(wtd_fr_ts.d1)
+acf2(wtd_fr_ts.d1)
+```
+
+```{r}
+wtd_fr_ts.d1 <- diff(wtd_fr_train, lag = 7)
+plot(wtd_fr_ts.d1,
+     main = "Web Traffic Analysis: French",
+     ylab = "French Pages", type = 'l')
+kpss.test(wtd_fr_ts.d1)
+acf2(wtd_fr_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+P = 2
+Q = 2
+D = 1
+d = 0
+p = 2
+q = 0/4
+
+I would apply ARIMA(2,0,0)(2,1,2)[7] and run auto ARIMA.
+
+```{r}
+wtd_fr_sm1 <- sarima(wtd_zh_train, S = 7,
+                     p = 2, d = 0, q = 0,
+                     P = 2, D = 1, Q = 2)
+wtd_fr_sm1
+```
+
+```{r}
+auto.arima(wtd_fr_train, D = 1, seasonal = TRUE)
+```
+```{r}
+wtd_fr_sm2 <- sarima(wtd_zh_train, S = 7,
+                     p = 0, d = 0, q = 4,
+                     P = 0, D = 1, Q = 2)
+wtd_fr_sm2
+```
+Looking at the above plots, I have decided to go ahead with model generated by auto ARIMA : ARIMA(0,0,4)(0,1,2)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic look better for this model and there is not much relative difference in the AIC value between the two values.
+
+Forecasting:
+
+```{r}
+wtd_fr_sm1_for <- sarima.for(wtd_fr_train,n.ahead = 109,S = 7,
+                     p = 0, d = 0, q = 4,
+                     P = 0, D = 1, Q = 2)
+lines(wtd_fr_test, type = 'o')
+```
+Evaluating the accuracy:
+```{r}
+accuracy(wtd_fr_sm1_for$pred,x = wtd_fr_test)
+```
+The RMSE of the model is pretty high : 88.62662.
+
+## English Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_en_train <- window(wtd_en_ts, end = c(100,1))
+wtd_en_test <- window(wtd_en_ts, start = c(100,2))
+plot(wtd_en_train, main = "English Web Traffic Analysis")
+```
+Similar to the previous time series, there is an upward trend in the first few months, followed by a very large spike in the traffic. There is seasonality in the data. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_en_stl <- stl(wtd_en_train, s.window = "periodic")
+plot(wtd_en_stl)
+```
+Performing the KPSS Test for stationarity:
+
+```{r}
+kpss.test(wtd_en_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_en.spec <- mvspec(as.vector(wtd_en_train),detrend = TRUE, spans = 3)
+head(wtd_en.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysis. There are also multiple peaks in the beginning of the plot followed by significant spikes around the 140th day.
+
+Plotting the Autocorrelation plot: 
+
+```{r}
+acf2(wtd_en_train, main = "Web Traffic Analysis: English")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Seasonal Differencing:
+```{r}
+wtd_en_ts.d1 <- diff(wtd_en_train, lag = 7)
+plot(wtd_en_ts.d1,
+     main = "Web Traffic Analysis: English",
+     ylab = "English Pages", type = 'l')
+kpss.test(wtd_en_ts.d1)
+acf2(wtd_en_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+Q = 1
+P = 0
+D = 1
+q = 1
+d = 0
+p = 0
+
+I would apply the ARIMA(0,0,1)(0,1,1)[7] and run auto ARIMA for this time series.
+
+```{r}
+wtd_en_sm1 <- sarima(wtd_en_train, S = 7,
+                     p = 0, d = 0, q = 1,
+                     P = 0, D = 1, Q = 1)
+wtd_en_sm1
+```
+```{r}
+auto.arima(wtd_en_train, D = 1, seasonal = TRUE)
+```
+```{r}
+wtd_en_sm2 <- sarima(wtd_en_train, S = 7,
+                     p = 0, d = 1, q = 0,
+                     P = 2, D = 0, Q = 0)
+wtd_en_sm2
+```
+
+```{r}
+wtd_en_sm3 <- sarima(wtd_en_train, S = 7,
+                     p = 1, d = 0, q = 0,
+                     P = 2, D = 1, Q = 0)
+wtd_en_sm3
+```
+Looking at the above plots, I have decided to go ahead with model generated by auto ARIMA : ARIMA(1,0,0)(2,1,0)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic look better for this model and there is not much relative difference in the AIC value between the models.
+
+Forecasting:
+
+```{r}
+wtd_en_sm1_for <- sarima.for(wtd_en_train,n.ahead = 109,S = 7,
+                      p = 1, d = 0, q = 0,
+                     P = 2, D = 1, Q = 0)
+lines(wtd_en_test, type = 'o')
+```
+Evaluating accuracy:
+
+```{r}
+accuracy(wtd_en_sm1_for$pred,x = wtd_en_test)
+```
+The RMSE value is 296.1758.
+
+## Russian Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_ru_train <- window(wtd_ru_ts, end = c(100,1))
+wtd_ru_test <- window(wtd_ru_ts, start = c(100,2))
+plot(wtd_ru_train, main = "Rusian Web Traffic Analysis")
+```
+There is a little bit of upward trend in the first few months, followed by an extremely large spike in the traffic. There is seasonality in the data. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_ru_stl <- stl(wtd_ru_train, s.window = "periodic")
+plot(wtd_ru_stl)
+```
+
+Performing the KPSS Test for stationarity:
+
+```{r}
+kpss.test(wtd_ru_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_ru.spec <- mvspec(as.vector(wtd_ru_train),detrend = TRUE, spans = 2)
+head(wtd_ru.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysis. There are multiple peaks in the begginning of the plot followed by a peak at around the 60th day ans a small peak around the 140th day. There are no other significant peaks.
+
+Plotting the Autocorrelation plot:
+
+```{r}
+acf2(wtd_ru_train, main = "Web Traffic Analysis: Russian")
+```
+The autocorrelations plot is much different from the other plots that I have seen so far. This cannot be interpreted as an obvious weekly seasonality. However, there is an obvious correlations among the lags. In this case, I have decided to apply the non-seasonal differencing first and check if that is enough to make the time series is stationary.
+
+Non Seasonal Differencing:
+```{r}
+wtd_ru_ts.d1 <- diff(wtd_ru_train, lag = 1)
+plot(wtd_ru_ts.d1,
+     main = "Web Traffic Analysis: Russian",
+     ylab = "Russian Pages", type = 'l')
+kpss.test(wtd_ru_ts.d1)
+acf2(wtd_ru_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+d = 1
+p = 2
+q = 2
+D = 0
+Q = 2
+P = 2
+
+I would apply the ARIMA(2,1,2)(2,0,2)[7]  to fit the model as well as run the auto ARIMA to see if there are better fits to the models.
+
+```{r}
+wtd_ru_sm1 <- sarima(wtd_ru_train, S = 7,
+                     p = 2, d = 1, q = 2,
+                     P = 2, D = 0, Q = 2)
+wtd_ru_sm1
+```
+
+```{r}
+auto.arima(wtd_ru_train)
+```
+```{r}
+wtd_ru_sm2 <- sarima(wtd_ru_train, S = 7,
+                     p = 2, d = 1, q = 0,
+                     P = 0, D = 0, Q = 2)
+wtd_ru_sm2
+```
+Looking at the above plots, I have decided to go ahead with model generated by auto ARIMA : ARIMA(2,1,0)(0,0,2)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic look better for this model and there is not much relative difference in the AIC value between the models.
+
+Forecasting:
+
+```{r}
+wtd_ru_sm1_for <- sarima.for(wtd_ru_train,n.ahead = 109,S = 7,
+                     p = 2, d = 1, q = 0,
+                     P = 0, D = 0, Q = 2)
+lines(wtd_ru_test, type = 'o')
+```
+Evaluating accuracy:
+
+```{r}
+accuracy(wtd_ru_sm1_for$pred,x = wtd_ru_test)
+```
+
+## German Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_de_train <- window(wtd_de_ts, end = c(100,1))
+wtd_de_test <- window(wtd_de_ts, start = c(100,2))
+plot(wtd_de_train, main = "German Web Traffic Analysis")
+```
+Similar to the previous time series, there is a noticeable upward trend in the first few months, followed by a slightly doenward trend and then another upward trend. There is seasonality in the data. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_de_stl <- stl(wtd_de_train, s.window = "periodic")
+plot(wtd_de_stl)
+```
+Performing the KPSS stationarity test:
+
+```{r}
+kpss.test(wtd_de_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_de.spec <- mvspec(as.vector(wtd_de_train),detrend = TRUE, spans = 2)
+head(wtd_de.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysis. There are also small peaks at the beggining of the plot followed by three significant peaks around 140th, 280th and 420th days (approx). This may signify some kind of quarterly seasonality.
+
+
+Plotting the autocorrelation plot:
+
+```{r}
+acf2(wtd_de_train, main = "Web Traffic Analysis: German")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Seasonal Differencing:
+```{r}
+wtd_de_ts.d1 <- diff(wtd_de_train, lag = 7)
+plot(wtd_de_ts.d1,
+     main = "Web Traffic Analysis: German",
+     ylab = "German Pages", type = 'l')
+kpss.test(wtd_de_ts.d1)
+acf2(wtd_de_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+Q= 1
+P = 0
+D = 1
+q = 4/0
+p = 1
+d = 0
+
+I would apply ARIMA(1,0,0)(0,1,1)[7] and run auto ARIMA on the model.
+
+```{r}
+wtd_de_sm1 <- sarima(wtd_de_train, S = 7,
+                     p = 1, d = 0, q = 0,
+                     P = 0, D = 1, Q = 1)
+wtd_de_sm1
+```
+
+```{r}
+auto.arima(wtd_de_train, D=1)
+```
+```{r}
+wtd_de_sm2 <- sarima(wtd_de_train,S = 7,
+                     p = 4, d = 0, q = 0,
+                     P = 0, D = 1, Q = 1)
+wtd_de_sm2
+```
+```{r}
+wtd_de_sm3 <- sarima(wtd_de_train,S = 7,
+                     p = 4, d = 1, q = 1,
+                     P = 2, D = 0, Q = 0)
+wtd_de_sm3
+```
+Looking at the above plots, I have decided to go ahead with model generated by auto ARIMA : ARIMA(4,0,0)(0,1,1)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic look better for this model (although all look equally bad) and there is not much relative difference in the AIC value between the models.
+
+Forecasting:
+
+```{r}
+wtd_de_sm1_for <- sarima.for(wtd_de_train,n.ahead = 109,S = 7,
+                     p = 4, d = 0, q = 0,
+                     P = 0, D = 1, Q = 1)
+lines(wtd_de_test, type = 'o')
+```
+Evaluating accuracy:
+
+```{r}
+accuracy(wtd_de_sm1_for$pred,x = wtd_de_test)
+```
+The RMSE value is 88.50616.
+
+## Japanese Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_ja_train <- window(wtd_ja_ts, end = c(100,1))
+wtd_ja_test <- window(wtd_ja_ts, start = c(100,2))
+plot(wtd_ja_train, main = "Japanese Web Traffic Analysis")
+```
+The upward trend in the first few months is not as noticeable as the previous time series but there is large spike in the traffic. There is seasonality in the data. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_ja_stl <- stl(wtd_ja_train, s.window = "periodic")
+plot(wtd_ja_stl)
+```
+
+Performing the KPSS stationarity test:
+
+```{r}
+kpss.test(wtd_ja_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_ja.spec <- mvspec(as.vector(wtd_ja_train),detrend = TRUE, spans = 3)
+head(wtd_ja.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysis and a significant spike around the 140th (approx.) but no other significant peaks. 
+
+Plotting the autocorrelation plot:
+
+```{r}
+acf2(wtd_ja_train, main = "Web Traffic Analysis: Japanese")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Seasonal Differencing:
+```{r}
+wtd_ja_ts.d1 <- diff(wtd_ja_train, lag = 7)
+plot(wtd_ja_ts.d1,
+     main = "Web Traffic Analysis: Japanese",
+     ylab = "Japanese Pages", type = 'l')
+kpss.test(wtd_ja_ts.d1)
+acf2(wtd_ja_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+D = 1
+P = 0
+Q = 2
+d = 0
+p = 3
+q = 1
+I would apply ARIMA(3,0,1)(0,1,2)[7] and run auti ARIMA to find a good fot for the model.
+
+```{r}
+wtd_ja_sm1 <- sarima(wtd_ja_train,S = 7,
+                     p = 3, d = 0, q = 1,
+                     P = 0, D = 1, Q = 2)
+wtd_ja_sm1
+```
+```{r}
+auto.arima(wtd_ja_train, D = 1)
+```
+```{r}
+wtd_ja_sm2 <- sarima(wtd_ja_train,S = 7,
+                     p = 0, d = 0, q = 3,
+                     P = 1, D = 1, Q = 1)
+wtd_ja_sm2
+```
+Looking at the above plots, I have decided to go ahead with my intuitive model : ARIMA(3,0,1)(0,1,2)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic look better for this model and AIC value is also much lesser for this model.
+
+Forecasting:
+```{r}
+wtd_ja_sm1_for <- sarima.for(wtd_ja_train,n.ahead = 109,S = 7,
+                      p = 3, d = 0, q = 1,
+                     P = 0, D = 1, Q = 2)
+lines(wtd_ja_test, type = 'o')
+```
+Evaluating accuracy:
+
+```{r}
+accuracy(wtd_ja_sm1_for$pred,x = wtd_ja_test)
+```
+The RMSE value is 60.98373.
+
+## Spanish Web Traffic
+
+Splitting the data set into train and test sets:
+
+```{r}
+wtd_es_train <- window(wtd_es_ts, end = c(100,1))
+wtd_es_test <- window(wtd_es_ts, start = c(100,2))
+plot(wtd_es_train, main = "Spanish Web Traffic Analysis")
+```
+There is high seasonality in the data and some spikes in the traffic. The time series does not seem to be stationary. 
+
+STL Decomposition:
+```{r}
+wtd_es_stl <- stl(wtd_es_train, s.window = "periodic")
+plot(wtd_es_stl)
+```
+Performing the KPSS test for stationarity:
+
+```{r}
+kpss.test(wtd_es_train)
+```
+The p-value is less than 0.05, thus we reject the null hypothesis. The time series is not stationary. 
+
+Spectral Analysis:
+```{r}
+wtd_es.spec <- mvspec(as.vector(wtd_es_train),detrend = TRUE, spans = 3)
+head(wtd_es.spec$details)
+```
+There is a weekly seasonality that can be seen in the spectral analysisand a very large spike around the 140th day (approx.). There is also another small spike around 280th day but no other significant peaks. The spike is larger than seen on any of the other time series. I am not really sure how to interpret this data.
+
+Plotting the autocorrelation plot:
+
+```{r}
+acf2(wtd_es_train, main = "Web Traffic Analysis: Spanish")
+```
+The autocorrelations shows a high lag every 7 days which is an indication of a weekly seasonality.
+
+Seasonal Differencing:
+```{r}
+wtd_es_ts.d1 <- diff(wtd_es_train, lag = 7)
+plot(wtd_es_ts.d1,
+     main = "Web Traffic Analysis: Spanish",
+     ylab = "Spanish Pages", type = 'l')
+kpss.test(wtd_es_ts.d1)
+acf2(wtd_es_ts.d1)
+```
+From the plot above, intuitively I would pick the following values:
+D = 1
+P = 0
+Q = 1
+d = 0
+p = 1
+q = 0
+I would apply ARIMA(1,0,0)(0,1,1)[7] an run auto ARIMA to find a fit for the model.
+
+# ARIMA MODELING
+
+```{r}
+wtd_es_sm1 <- sarima(wtd_es_train,S = 7,
+                     p = 1, d = 0, q = 0,
+                     P = 0, D = 1, Q = 1)
+wtd_es_sm1
+```
+
+```{r}
+auto.arima(wtd_es_train, seasonal = TRUE)
+```
+```{r}
+wtd_es_sm2 <- sarima(wtd_es_train,S = 7,
+                     p = 1, d = 0, q = 2,
+                     P = 2, D = 1, Q = 0)
+wtd_es_sm2
+```
+Looking at the above plots, I have decided to go ahead with model generated by auto ARIMA : ARIMA(1,0,2)(2,1,0)[7]  for forecasting because among all the models the ACF of Residuals and p-values for Ljung-Box statistic looks better for this model and there is not much relative difference in the AIC value between the models.
+
+Forecasting:
+```{r}
+wtd_es_sm1_for <- sarima.for(wtd_es_train,n.ahead = 109,S = 7,
+                     p = 1, d = 0, q = 2,
+                     P = 2, D = 1, Q = 0)
+lines(wtd_es_test, type = 'o')
+```
+Evaluating Accuracy:
+
+```{r}
+accuracy(wtd_es_sm1_for$pred,x = wtd_es_test)
+```
+The RMSE value is 78.99408.
+
+# CONCLUSIONS
+
+The Wikipedia Web Traffic time series data was successfully analyzed and forecasted by grouping together by language. Each time series was individually decomposed, non stationarity was differenced out and then the most appropriate ARIMA model was identified using AIC metrics and the residual plots. The time series was forecasted for all 7 languages however, the accuracy is not great for all of them. There is definitely a scope of improvement where in different MAchine learning models can be applied to forecast future data and a comparison can be done with the results of the ARIMA model.
+
+# REFERENCES
+
+1.	N. Petluri and E. Al-Masri, "Web Traffic Prediction of Wikipedia Pages," 2018 IEEE International Conference on Big Data (Big Data), 2018, pp. 5427-5429, doi: 10.1109/BigData.2018.8622207.
+2.	Kämpf M, Tessenow E, Kenett DY, Kantelhardt JW. The Detection of Emerging Trends Using Wikipedia Traffic Data and Context Networks. PLoS One. 2015;10(12):e0141892. Published 2015 Dec 31. doi:10.1371/journal.pone.0141892
+3. http://manishbarnwal.com/blog/2017/05/03/time_series_and_forecasting_using_R/#:~:text=ts()%20function%20is%20used,set%20frequency%20of%20the%20data
+4. https://towardsdatascience.com/stl-decomposition-how-to-do-it-from-scratch-b686711986ec
+5. https://online.stat.psu.edu/stat510/lesson/4/4.2
+6. Hyndman, R. J., & Athanasopoulos, G. (2018). Forecasting: principles and practice. OTexts.
+7. https://www.wikipedia.org/
